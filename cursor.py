@@ -1,155 +1,28 @@
-#!/usr/bin/env python
-#
-# See http://www.python.org/dev/peps/pep-0249/
-#
-# Many docstrings in this file are based on the PEP, which is in the public domain.
 
-from __future__ import absolute_import
-from __future__ import unicode_literals
+# sqlalchemy-tinybird: A Tinybird connector for SQLAlchemy
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+# 
+#      http://www.apache.org/licenses/LICENSE-2.0
+# 
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# 
+#   Portions: https://github.com/snowflakedb/snowflake-sqlalchemy
+#             https://github.com/cloudflare/sqlalchemy-clickhouse
+
 import re
 import uuid
-import requests
-from infi.clickhouse_orm.models import ModelBase
-from infi.clickhouse_orm.database import Database
-from datetime import datetime
+from param_escaper import ParamEscaper
 
-# PEP 249 module globals
-apilevel = '2.0'
-threadsafety = 2  # Threads may share the module and connections.
-paramstyle = 'pyformat'  # Python extended format codes, e.g. ...WHERE name=%(name)s
-
-# Python 2/3 compatibility
-try:
-    isinstance(obj, basestring)
-except NameError:
-    basestring = str
-
-class Error(Exception):
-    """Exception that is the base class of all other error exceptions.
-    You can use this to catch all errors with one single except statement.
-    """
-    pass
-
-class ParamEscaper(object):
-    def escape_args(self, parameters):
-        if isinstance(parameters, dict):
-            return {k: self.escape_item(v) for k, v in parameters.items()}
-        elif isinstance(parameters, (list, tuple)):
-            return tuple(self.escape_item(x) for x in parameters)
-        else:
-            raise Exception("Unsupported param format: {}".format(parameters))
-
-    def escape_number(self, item):
-        return item
-
-    def escape_string(self, item):
-        # Need to decode UTF-8 because of old sqlalchemy.
-        # Newer SQLAlchemy checks dialect.supports_unicode_binds before encoding Unicode strings
-        # as byte strings. The old version always encodes Unicode as byte strings, which breaks
-        # string formatting here.
-        if isinstance(item, bytes):
-            item = item.decode('utf-8')
-        return "'{}'".format(item.replace("\\", "\\\\").replace("'", "\\'").replace("$", "$$"))
-
-    def escape_item(self, item):
-        if item is None:
-            return 'NULL'
-        elif isinstance(item, (int, float)):
-            return self.escape_number(item)
-        elif isinstance(item, basestring):
-            return self.escape_string(item)
-        elif isinstance(item, datetime):
-            return self.escape_string(item.strftime("%Y-%m-%d %H:%M:%S"))
-        else:
-            raise Exception("Unsupported object {}".format(item))
 
 _escaper = ParamEscaper()
 
-# Patch ORM library
-@classmethod
-def create_ad_hoc_field(cls, db_type):
-    import infi.clickhouse_orm.fields as orm_fields
-
-    # Enums
-    if db_type.startswith('Enum'):
-        db_type = 'String' # enum.Eum is not comparable
-    # Arrays
-    if db_type.startswith('Array'):
-        inner_field = cls.create_ad_hoc_field(db_type[6 : -1])
-        return orm_fields.ArrayField(inner_field)
-    # FixedString
-    if db_type.startswith('FixedString'):
-        db_type = 'String'
-
-    if db_type == 'LowCardinality(String)':
-        db_type = 'String'
-
-    if db_type.startswith('DateTime'):
-        db_type = 'DateTime'
-
-    if db_type.startswith('Nullable'):
-        inner_field = cls.create_ad_hoc_field(db_type[9 : -1])
-        return orm_fields.NullableField(inner_field)
-   
-    # db_type for Deimal comes like 'Decimal(P, S) string where P is precision and S is scale'
-    if db_type.startswith('Decimal'):
-        nums = [int(n) for n in db_type[8:-1].split(',')]
-        return orm_fields.DecimalField(nums[0], nums[1])
-    
-    # Simple fields
-    name = db_type + 'Field'
-    if not hasattr(orm_fields, name):
-        raise NotImplementedError('No field class for %s' % db_type)
-    return getattr(orm_fields, name)()
-ModelBase.create_ad_hoc_field = create_ad_hoc_field
-
-from six import PY3, string_types
-def _send(self, data, settings=None, stream=False):
-    if PY3 and isinstance(data, string_types):
-        data = data.encode('utf-8')
-    params = self._build_params(settings)
-    r = self.request_session.post(self.db_url, params=params, data=data, stream=stream, timeout=self.timeout)
-    if r.status_code != 200:
-        raise Exception(r.text)
-    return r
-Database._send = _send
-
-#
-# Connector interface
-#
-
-def connect(*args, **kwargs):
-    return Connection(*args, **kwargs)
-
-class Connection(Database):
-    """
-        These objects are small stateless factories for cursors, which do all the real work.
-    """
-    def __init__(self, db_name, db_url='http://localhost:8123/', username=None, password=None, readonly=False, ssl="False"):
-        if ssl.upper() == "TRUE":
-            db_url = db_url.replace("http", "https")
-        elif ssl.upper() == "FALSE":
-            pass
-        else:
-            raise ValueError("Not Supported value of ssl parameter, only True/False values are accepted")
-        super(Connection, self).__init__(db_name, db_url, username, password, readonly)
-        self.db_name = db_name
-        self.db_url = db_url
-        self.username = username
-        self.password = password
-        self.readonly = readonly
-
-    def close(self):
-        pass
-
-    def commit(self):
-        pass
-
-    def cursor(self):
-        return Cursor(self)
-
-    def rollback(self):
-        raise NotSupportedError("Transactions are not supported")  # pragma: no cover
 
 class Cursor(object):
     """These objects represent a database cursor, which is used to manage the context of a fetch
@@ -361,6 +234,7 @@ class Cursor(object):
         assert self._state == self._STATE_RUNNING, "Should be running if processing response"
         cols = None
         data = []
+
         for r in response:
             if not cols:
                 cols = [(f, r._fields[f].db_type) for f in r._fields]
