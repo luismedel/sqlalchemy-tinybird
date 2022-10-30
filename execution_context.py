@@ -16,11 +16,11 @@
 #   Portions: https://github.com/snowflakedb/snowflake-sqlalchemy
 #             https://github.com/cloudflare/sqlalchemy-clickhouse
 
-from sqlalchemy import util as sa_util
+from sqlalchemy import util
 from sqlalchemy.engine import default
 
 
 class TinybirdExecutionContext(default.DefaultExecutionContext):
-    @sa_util.memoized_property
-    def should_autocommit(self):
+    @util.memoized_property
+    def should_autocommit(self) -> bool:
         return False # No DML supported, never autocommit

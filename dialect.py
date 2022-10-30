@@ -21,6 +21,13 @@ import re
 import sqlalchemy.types as sqltypes
 from sqlalchemy.engine import default, reflection
 
+from common import ischema_names, colspecs
+from compiler import TinybirdCompiler
+from execution_context import TinybirdExecutionContext
+
+from identifier_preparer import TinybirdIdentifierPreparer
+from type_compiler import TinybirdTypeCompiler
+
 
 class TinybirdDialect(default.DefaultDialect):
     name = 'tinybird'
@@ -55,14 +62,14 @@ class TinybirdDialect(default.DefaultDialect):
     @classmethod
     def dbapi(cls):
         try:
-            import sqlalchemy_tinybird.connector as connection
+            import sqlalchemy_tinybird.connection as connection
         except:
             import connection
         return connection
 
     def create_connect_args(self, url):
         kwargs = {
-            'db_url': 'https://%s:%d/' % (url.host, url.port or 443),
+            'db_url': 'https://%s:%d/v0/sql' % (url.host, url.port or 443),
             'token': url.username
         }
         kwargs.update(url.query)

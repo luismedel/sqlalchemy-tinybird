@@ -16,9 +16,10 @@
 #   Portions: https://github.com/snowflakedb/snowflake-sqlalchemy
 #             https://github.com/cloudflare/sqlalchemy-clickhouse
 
-from sqlalchemy.sql import compiler
+
+import sqlalchemy.sql
 
 
-class TinybirdTypeCompiler(compiler.GenericTypeCompiler):
+class TinybirdTypeCompiler(sqlalchemy.sql.compiler.GenericTypeCompiler):
     def visit_ARRAY(self, type, **kw):
         return "Array(%s)" % type

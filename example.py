@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 
 # sqlalchemy-tinybird: A Tinybird connector for SQLAlchemy
 #
@@ -17,25 +16,67 @@
 #   Portions: https://github.com/snowflakedb/snowflake-sqlalchemy
 #             https://github.com/cloudflare/sqlalchemy-clickhouse
 
+
+from dataclasses import dataclass
 import os
+from typing import Optional, Dict
+from dotenv import dotenv_values
 
-token = 'p.eyJ1IjogImQ3YTAxZmJjLTEyZGItNDMyYy1hMzhjLTBlNmUzYzJiNzI2MyIsICJpZCI6ICIzMWJlYjQwNi0yYWRmLTQ5OWYtODllNS01M2M0YWRiNmUyYTIifQ.X9xK2AumC01-DfTxJi3dtFE8BzkqVRGsWmp--V_Ztz4'
+from model import TinybirdModel
 
-# Use connector directly
+env: Dict[str, Optional[str]] = dotenv_values('.env')
+token: Optional[str] = env.get('TB_TOKEN', os.environ.get('TB_TOKEN', None))
+if not token:
+    raise Exception("Missing TB_TOKEN")
+
 import connection
-cursor = connection.connect('https://api.tinybird.co', token=token).cursor()
-cursor.execute('SELECT * FROM top_browsers LIMIT 10')
-print(cursor.fetchone())
+
+@dataclass
+class TopBrowsers(TinybirdModel):
+    browser: str
+    visits: int
+    hits: int
+
+if False:
+    print("1) Use a cursor with an ad-hoc class")
+    cursor = connection.connect('https://api.tinybird.co', token=token).cursor()
+    cursor.execute('SELECT * FROM top_browsers')
+    for item in cursor.fetchall():
+        print(item)
+
+
+    print("2) Use a cursor with a predefined class")
+    cursor = connection.connect('https://api.tinybird.co', token=token).cursor(model_class=TopBrowsers)
+    cursor.execute('SELECT * FROM top_browsers')
+    for item in cursor.fetchall():
+        print(item)
+
+
+    print("3) Use connector directly with an ad-hoc class")
+    conn = connection.connect('https://api.tinybird.co', token=token)
+    items = conn.select('SELECT * FROM top_browsers')
+    for item in items:
+        print(item)
+
+
+    print("4) Use connector directly with a predefined class")
+    conn = connection.connect('https://api.tinybird.co', token=token)
+    items = conn.select('SELECT * FROM top_browsers', model_class=TopBrowsers)
+    for item in items:
+        print(item)
+
 
 # Register SQLAlchemy dialect
 from sqlalchemy.dialects import registry
-registry.register("tinybird", "base", "dialect")
+registry.register("tinybird", "sqlalchemy_tinybird", "TinybirdDialect")
+
 
 # Test engine and table 
-from sqlalchemy import *
+from sqlalchemy import select, func
 from sqlalchemy.engine import create_engine
-from sqlalchemy.schema import *
+from sqlalchemy.schema import Table, MetaData
 
 engine = create_engine(f"tinybird://{token}@api.tinybird.co/")
-logs = Table('test', MetaData(bind=engine), autoload=True)
+engine.connect()
+logs = Table('top_browsers', MetaData(bind=engine), autoload=True)
 print(select([func.count('*')], from_obj=logs).scalar())

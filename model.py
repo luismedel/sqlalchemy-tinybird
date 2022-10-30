@@ -16,12 +16,7 @@
 #   Portions: https://github.com/snowflakedb/snowflake-sqlalchemy
 #             https://github.com/cloudflare/sqlalchemy-clickhouse
 
-class Error(Exception):
-    """Exception that is the base class of all other error exceptions.
-    You can use this to catch all errors with one single except statement.
-    """
-    pass
+from infi.clickhouse_orm.models import Model
 
-
-class NotSupportedError(Error):
+class TinybirdModel(Model):
     pass

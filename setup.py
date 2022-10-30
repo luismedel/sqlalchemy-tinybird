@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 
 # sqlalchemy-tinybird: A Tinybird connector for SQLAlchemy
 #
@@ -21,11 +20,12 @@ from os import path, getenv
 from setuptools import setup
 from codecs import open
 
-VERSION = [0, 1, 5]
-readme = open('README.rst').read()
+
+VERSION = [0, 0, 1]
+readme = open('README.md').read()
 
 setup(
-    name='sqlalchemy-tinybird',
+    name='sqlalchemy_tinybird',
     version='.'.join('%d' % v for v in VERSION[0:3]),
     description='Tinybird SQLAlchemy Dialect',
     long_description = readme,
@@ -35,8 +35,8 @@ setup(
     url = 'https://github.com/luismedel/sqlalchemy-tinybird',
     keywords = "db database cloud tinybird analytics clickhouse",
     install_requires = [
-        'sqlalchemy>=1.0.0',
-        'infi.clickhouse_orm>=1.2.0'
+        'sqlalchemy',
+        'infi.clickhouse_orm'
     ],
     packages=[
         'sqlalchemy_tinybird',
@@ -49,11 +49,11 @@ setup(
     },
     entry_points={
         'sqlalchemy.dialects': [
-            'tinybird=sqlalchemy_tinybird.base',
+            'tinybird=sqlalchemy_tinybird.__init__',
         ]
     },
     classifiers = [
-        'Development Status :: 5 - Production/Stable',
+        'Development Status :: 2 - Pre-Alpha',
 
         'Environment :: Console',
         'Environment :: Other Environment',

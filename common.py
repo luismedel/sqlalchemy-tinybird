@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 
 # sqlalchemy-tinybird: A Tinybird connector for SQLAlchemy
 #

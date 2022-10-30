@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 
 # sqlalchemy-tinybird: A Tinybird connector for SQLAlchemy
 #
@@ -17,13 +16,17 @@
 #   Portions: https://github.com/snowflakedb/snowflake-sqlalchemy
 #             https://github.com/cloudflare/sqlalchemy-clickhouse
 
-from __future__ import absolute_import
-from __future__ import unicode_literals
+import json
+from typing import Any, Generator, List, Optional, Type, Dict
+from requests import Session
 
-from infi.clickhouse_orm.models import ModelBase
 from infi.clickhouse_orm.database import Database
+from infi.clickhouse_orm.models import Model, ModelBase
 
-from cursor import Cursor
+from six import PY3, string_types
+
+from error import NotSupportedError
+
 
 # See http://www.python.org/dev/peps/pep-0249/
 #
@@ -37,73 +40,9 @@ paramstyle = 'pyformat'  # Python extended format codes, e.g. ...WHERE name=%(na
 
 # Python 2/3 compatibility
 try:
-    isinstance(obj, basestring)
+    isinstance('', basestring)
 except NameError:
     basestring = str
-
-
-# Patch ORM library
-@classmethod
-def create_ad_hoc_field(cls, db_type):
-    import infi.clickhouse_orm.fields as orm_fields
-
-    # Enums
-    if db_type.startswith('Enum'):
-        db_type = 'String' # enum.Eum is not comparable
-    # Arrays
-    if db_type.startswith('Array'):
-        inner_field = cls.create_ad_hoc_field(db_type[6 : -1])
-        return orm_fields.ArrayField(inner_field)
-    # FixedString
-    if db_type.startswith('FixedString'):
-        db_type = 'String'
-
-    if db_type == 'LowCardinality(String)':
-        db_type = 'String'
-
-    if db_type.startswith('DateTime'):
-        db_type = 'DateTime'
-
-    if db_type.startswith('Nullable'):
-        inner_field = cls.create_ad_hoc_field(db_type[9 : -1])
-        return orm_fields.NullableField(inner_field)
-   
-    # db_type for Decimal comes like 'Decimal(P, S) string where P is precision and S is scale'
-    if db_type.startswith('Decimal'):
-        nums = [int(n) for n in db_type[8:-1].split(',')]
-        return orm_fields.DecimalField(nums[0], nums[1])
-    
-    # Simple fields
-    name = db_type + 'Field'
-    if not hasattr(orm_fields, name):
-        raise NotImplementedError('No field class for %s' % db_type)
-    return getattr(orm_fields, name)()
-ModelBase.create_ad_hoc_field = create_ad_hoc_field
-
-from six import PY3, string_types
-def _send(self, data, settings=None, stream=False):
-    if PY3 and isinstance(data, string_types):
-        data = data.encode('utf-8')
-    params = self._build_params(settings)
-    params['token'] = self.token
-    
-    # TabSeparatedWithNamesAndTypes output isn't supported by Tinybird
-    # Quick hack to get a JSON response
-    params['q'] = data.decode().replace('FORMAT TabSeparatedWithNamesAndTypes', 'FORMAT JSON').encode()
-    
-    session = self.request_session
-    r = session.get(self.db_url, params=params, stream=stream, timeout=self.timeout)
-    if r.status_code != 200:
-        raise Exception(r.text)
-    return r
-Database._send = _send
-
-#
-# Connector interface
-#
-
-def connect(*args, **kwargs):
-    return Connection(*args, **kwargs)
 
 
 class Connection(Database):
@@ -119,14 +58,37 @@ class Connection(Database):
 
         super(Connection, self).__init__(db_name='', db_url=db_url, readonly=True, autocreate=False)
 
+    def select(self, query: str, model_class: Optional[Type[Model]] = None, settings: Optional[Dict[str, Any]] = None) -> Generator[Model, None, None]:
+        query = f'{query} FORMAT JSON'        
+        if PY3 and isinstance(query, string_types):
+            query = query.encode('utf-8')
+        
+        req_params = { 'q': query }
+        req_headers = { 'Authorization': f'Bearer {self.token}' }
+
+        session = self.request_session
+        r = session.get(self.db_url, params=req_params, headers=req_headers, stream=False, timeout=self.timeout)
+        if r.status_code != 200:
+            raise Exception(r.text)
+        
+        result = json.loads(r.text)
+        
+        if not model_class:
+            fields = tuple((f['name'], f['type']) for f in result['meta'])
+            model_class = ModelBase.create_ad_hoc_model(fields)
+
+        return (model_class(**values) for values in result['data'])
+        
+
     def close(self):
         pass
 
     def commit(self):
         pass
 
-    def cursor(self):
-        return Cursor(self)
+    def cursor(self, model_class: Optional[Type[Model]] = None) -> 'Cursor':
+        from cursor import Cursor
+        return Cursor(self, model_class=model_class)
 
     def rollback(self):
         raise NotSupportedError("Transactions are not supported")  # pragma: no cover
@@ -140,3 +102,10 @@ class Connection(Database):
     def _get_server_version(self, as_tuple=True):
         ver = '1.0.0'
         return tuple(int(n) for n in ver.split('.') if n.isdigit()) if as_tuple else ver
+
+    def _send(*args, **kwargs) -> Any:
+        raise Exception("You're not supposed to see this")
+
+
+def connect(*args, **kwargs) -> Connection:
+    return Connection(*args, **kwargs)

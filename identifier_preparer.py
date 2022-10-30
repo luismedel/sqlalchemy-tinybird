@@ -20,11 +20,11 @@ from sqlalchemy.dialects.postgresql.base import PGIdentifierPreparer
 
 
 class TinybirdIdentifierPreparer(PGIdentifierPreparer):
-    def quote_identifier(self, value):
+    def quote_identifier(self, value: str) -> str:
         """ Never quote identifiers. """
         return self._escape_identifier(value)
 
-    def quote(self, ident, force=None):
+    def quote(self, ident: str, force=None) -> str:
         if self._requires_quotes(ident):
             return '"{}"'.format(ident)
         return ident

@@ -17,8 +17,12 @@
 #             https://github.com/cloudflare/sqlalchemy-clickhouse
 
 import re
+from typing import Optional, Type
 import uuid
 from param_escaper import ParamEscaper
+from connection import Connection
+
+from infi.clickhouse_orm.models import Model
 
 
 _escaper = ParamEscaper()
@@ -31,20 +35,22 @@ class Cursor(object):
     Cursors are not isolated, i.e., any changes done to the database by a cursor are immediately
     visible by other cursors or connections.
     """
-    _STATE_NONE = 0
-    _STATE_RUNNING = 1
-    _STATE_FINISHED = 2
+    _STATE_NONE: int = 0
+    _STATE_RUNNING: int = 1
+    _STATE_FINISHED: int = 2
 
-    def __init__(self, database):
-        self._db = database
+    def __init__(self, database: Connection, model_class: Optional[Type[Model]] = None):
+        self._db: Connection = database
         self._reset_state()
-        self._arraysize = 1
+        self._arraysize: int = 1
+        self._model_class = model_class
 
     def _reset_state(self):
         """Reset state about the previous query in preparation for running another query"""
-        self._uuid = None
+        self._uuid: Optional[uuid.uuid1] = None
         self._columns = None
         self._rownumber = 0
+
         # Internal helper state
         self._state = self._STATE_NONE
         self._data = None
@@ -85,10 +91,10 @@ class Cursor(object):
 
     def execute(self, operation, parameters=None, is_response=True):
         """Prepare and execute a database operation (query or command). """
-        if parameters is None or not parameters:
-            sql = operation
-        else:
+        if parameters:
             sql = operation % _escaper.escape_args(parameters)
+        else:
+            sql = operation
 
         self._reset_state()
 
@@ -96,7 +102,7 @@ class Cursor(object):
         self._uuid = uuid.uuid1()
 
         if is_response:
-            response = self._db.select(sql, settings={'query_id': self._uuid})
+            response = self._db.select(sql, model_class=self._model_class, settings={'query_id': self._uuid})
             self._process_response(response)
         else:
             self._db.raw(sql)
